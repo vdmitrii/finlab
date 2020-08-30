@@ -2,84 +2,74 @@ import pandas as pd
 import numpy as np
 from scipy.signal import lfiltic, lfilter
 from numba import jit
-# from tqdm import tqdm
+from tqdm import tqdm
 
 
-def tick_bars(df: pd.DataFrame, col: str = 'number_of_trades', max_trades: int = 100) -> pd.DataSeries:
+def tick_bars(df: pd.DataFrame, col: str = 'number_of_trades', max_trades: int = 250) -> pd.DataFrame:
     """
     Compute Tick Bars
 
     Args:
         df (pd.DataFrame): pandas dataframe with data
         col (str): name of columns (number_of_trades)
-        t (int): number of ticks for grouping
+        max_trades (int): max number of trades for grouping
 
     Returns:
-        pd.DataSeries: new series with tick_bars
+        pd.DataFrame: new dataframe with trade bars
     """
-    s = df[col].values
-    tick_bars_col = pd.Series([])
-    num_of_trades = 0
-
-    for idx, row in enumerate(s):
-        num_of_trades += s[idx]
-        if num_of_trades >= max_trades:
-            tick_bars_col.append(df.iloc[idx])
-
-    df['tick_bars'] = tick_bars_col
-
-    return df
+    tick_series = df[col]
+    trades = 0
+    idxs = []
+    for idx, num_of_trades in enumerate(tqdm(tick_series)):
+        trades += num_of_trades
+        if trades >= max_trades:
+            idxs.append(idx)
+            trades = 0
+    return df.iloc[idxs].drop_duplicates()
 
 
-def volume_bars(df: pd.DataFrame, col: str = 'volume', max_traded_volume: int = 100) -> pd.DataSeries:
+def volume_bars(df: pd.DataFrame, volume_column: str = 'volume', max_traded_volume: int = 50) -> pd.DataFrame:
     """
-    Compute Volue Bars
+    Compute Volume Bars
 
     Args:
         df (pd.DataFrame): pandas dataframe with data
-        col (str): name of columns (number_of_trades)
-        traded_volume (int): number of ticks for grouping
+        volume_column (str): name of columns (number_of_trades)
+        max_traded_volume (int): maximum trading volume for the tick
 
     Returns:
-        pd.DataSeries: new series with tick_bars
+        pd.DataFrame: new dataframe with tick_bars
     """
-    s = df[col].values
-    volume_bars_col = pd.Series([])
-    traded_volume = 0
-
-    for idx, row in enumerate(s):
-        traded_volume += s[idx]
-        if traded_volume >= max_traded_volume:
-            volume_bars_col.append(df.iloc[idx])
-
-    df['volume_bars'] = volume_bars_col
-
-    return df
+    volume_series = df[volume_column]
+    vol = 0
+    idxs = []
+    for idx, volume in enumerate(tqdm(volume_series)):
+        vol += volume
+        if vol >= max_traded_volume:
+            idxs.append(idx)
+            vol = 0
+    return df.iloc[idxs].drop_duplicates()
 
 
-def dollar_bars(df: pd.DataFrame, asset_volume: str = 'quote_asset_volume', max_traded: int = 100) -> pd.DataSeries:
+def dollar_bars(df: pd.DataFrame, amount: str = 'amount', max_amount: int = 500000) -> pd.DataFrame:
     """
     Compute Dollar Bars
 
     Args:
         df (pd.DataFrame): pandas dataframe with data
-        asset_volume: (str): traded volume in quote asset
-        max_traded (int): traded amount of dollars
+        amount: (str): column with dollar amount
+        max_amount (int): max amount of dollars
     Returns:
-        pd.DataSeries: new series with tick_bars
+        pd.DataFrame: new dataframe with dollar bars
     """
-    asset_volume = df[asset_volume].values
-    dollar_bars_col = pd.Series([])
-    traded_dollars = 0
-
-    for idx, row in enumerate(asset_volume):
-        traded_dollars += asset_volume[idx]
-        if traded_dollars >= max_traded:
-            dollar_bars_col.append(df.iloc[idx])
-
-    df['dollar_bars'] = traded_dollars
-
-    return df
+    amount_series = df[amount]
+    amnt = 0
+    idxs = []
+    for idx, amount in enumerate(tqdm(amount_series)):
+        amnt += amount
+        if amnt >= max_amount:
+            idxs.append(idx)
+    return df.iloc[idxs].drop_duplicates()
 
 
 def dollar_imbalance_bars(df: pd.DataFrame, price: str = 'price', volume: str = 'volume') -> pd.DataFrame:
@@ -102,15 +92,8 @@ def dollar_imbalance_bars(df: pd.DataFrame, price: str = 'price', volume: str = 
     Returns:
         pd.DataFrame: final dataframe with added colomn
     """
-    new_col = pd.Series([])
 
-    delta_price = df.close.diff().fillna(0)
-
-    for idx, row in df.iterrows():
-        diff = df.loc[idx - 1, price]
-        if row.diff() == 0:
-            new_col.append(row.diff())
-        elif row.diff() != 0:
+    pass
 
 
 def vwap(df: pd.DataFrame) -> pd.DataFrame:
@@ -165,7 +148,6 @@ def ewma_linear_filter(array: np.array, window: int):
     return lfilter(b, a, array, zi=zi)[0]
 
 
-# Check it out later
 @jit(nopython=True)
 def numba_isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
     return np.fabs(a-b) <= np.fmax(rel_tol*np.fmax(np.fabs(a), np.fabs(b)), abs_tol)
@@ -174,11 +156,11 @@ def numba_isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
 @jit(nopython=True)
 def bt(p0, p1, bs):
     # if math.isclose((p1 - p0), 0.0, abs_tol=0.001):
-    if numba_isclose((p1-p0), 0.0, abs_tol=0.001):
+    if numba_isclose((p1 - p0), 0.0, abs_tol=0.001):
         b = bs[-1]
         return b
     else:
-        b = np.abs(p1-p0)/(p1-p0)
+        b = np.abs(p1 - p0) / (p1 - p0)
         return b
 
 
@@ -186,6 +168,6 @@ def bt(p0, p1, bs):
 def get_imbalance(t):
     bs = np.zeros_like(t)
     for i in np.arange(1, bs.shape[0]):
-        t_bt = bt(t[i-1], t[i], bs[:i-1])
-        bs[i-1] = t_bt
+        t_bt = bt(t[i - 1], t[i], bs[:i - 1])
+        bs[i - 1] = t_bt
     return bs[:-1]  # remove last value
